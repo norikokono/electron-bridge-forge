@@ -50,26 +50,37 @@
 
             return (
                 <div className="terminal">
-                    <h1>AV-7 :: BRIDGE_FORGE_v1.0</h1>
-                    <p>Target: Electron/SQLite3 Integer Truncation PoC</p>
-                    <hr style={{borderColor: '#333'}} />
-                    
-                    <button onClick={runForge}>INITIATE FORGE</button>
-
-                    <h3>Activity Log:</h3>
-                    <div style={{height: '150px', overflowY: 'auto', border: '1px solid #222', padding: '5px'}}>
-                        {logs.map((l, i) => <div key={i}>{l}</div>)}
+                    <h1 style={{color: '#fff', textShadow: '0 0 10px #00ff41'}}>AV-7 BRIDGE FORGE</h1>
+                    <div style={{display: 'flex', gap: '10px', marginBottom: '20px'}}>
+                        <div style={{border: '1px solid #333', padding: '10px', flex: 1}}>
+                            <small>ENGINE STATUS</small>
+                            <div style={{color: bridge ? '#00ff41' : '#ff4141'}}>
+                                {bridge ? '● VULNERABLE' : '○ DISCONNECTED'}
+                            </div>
+                        </div>
+                        <div style={{border: '1px solid #333', padding: '10px', flex: 1}}>
+                            <small>PAYLOAD</small>
+                            <div>INT32_WRAP_2GB</div>
+                        </div>
                     </div>
-
+                    
+                    <button onClick={runForge} disabled={!window.api && !window.electron}>
+                        { (!window.api && !window.electron) ? "WAITING FOR TARGET..." : "EXECUTE FORGE" }
+                    </button>
+            
+                    <h3>Real-time Logs:</h3>
+                    <div style={{height: '100px', overflowY: 'auto', background: '#050505', padding: '10px', fontSize: '12px'}}>
+                        {logs.map((l, i) => <div key={i} style={{opacity: i === 0 ? 1 : 0.5}}>{l}</div>)}
+                    </div>
+            
                     {dump && (
-                        <div>
-                            <h3>Memory Dump (Hex/JSON):</h3>
+                        <div style={{marginTop: '20px'}}>
+                            <h3 style={{color: '#fff'}}>LEAKED HEAP DATA:</h3>
                             <pre>{dump}</pre>
                         </div>
                     )}
                 </div>
             );
-        }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
