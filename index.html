@@ -8,20 +8,18 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
         body { background: #050505; color: #00ff41; font-family: 'Courier New', monospace; margin: 0; padding: 20px; }
-        .terminal { border: 2px solid #00ff41; padding: 25px; background: #000; box-shadow: 0 0 20px rgba(0, 255, 65, 0.2); max-width: 1000px; margin: auto; }
+        .terminal { border: 2px solid #00ff41; padding: 25px; background: #000; box-shadow: 0 0 25px rgba(0, 255, 65, 0.3); max-width: 1000px; margin: auto; }
         .header { text-align: center; border-bottom: 1px solid #00ff41; padding-bottom: 15px; margin-bottom: 20px; }
-        .status-grid { display: flex; gap: 15px; margin-bottom: 20px; }
-        .status-box { border: 1px solid #333; padding: 12px; flex: 1; background: #0a0a0a; position: relative; }
-        .status-box small { color: #888; display: block; margin-bottom: 5px; font-size: 10px; }
+        .status-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+        .status-box { border: 1px solid #333; padding: 10px; background: #0a0a0a; text-align: center; }
+        .status-box small { color: #888; display: block; font-size: 9px; text-transform: uppercase; margin-bottom: 4px; }
         .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        button { background: #00ff41; color: #000; border: none; padding: 15px; font-weight: bold; cursor: pointer; transition: 0.2s; font-family: 'Courier New', monospace; }
+        button { background: #00ff41; color: #000; border: none; padding: 15px; font-weight: bold; cursor: pointer; font-family: 'Courier New'; }
         button:hover:not(:disabled) { background: #fff; box-shadow: 0 0 15px #00ff41; }
-        button:disabled { background: #1a1a1a; color: #444; cursor: not-allowed; }
+        button:disabled { background: #1a1a1a; color: #444; }
         .fuzz-btn { background: #ff9900; }
-        .log-area { height: 250px; overflow-y: auto; background: #000; padding: 10px; font-size: 12px; border: 1px solid #222; margin-top: 15px; color: #00ff41; border-radius: 4px; }
-        .leak-view { margin-top: 20px; background: #0a0a0a; border: 1px solid #333; padding: 15px; }
-        pre { color: #fff; font-size: 11px; white-space: pre-wrap; word-wrap: break-word; }
-        .blink { animation: blinker 1s linear infinite; }
+        .log-area { height: 280px; overflow-y: auto; background: #000; padding: 12px; font-size: 11px; border: 1px solid #222; margin-top: 15px; color: #00ff41; }
+        .critical { color: #ff4141; animation: blinker 1s linear infinite; }
         @keyframes blinker { 50% { opacity: 0; } }
     </style>
 </head>
@@ -32,127 +30,116 @@
         function App() {
             const [logs, setLogs] = React.useState([]);
             const [isVulnerable, setIsVulnerable] = React.useState(false);
-            const [detectedType, setDetectedType] = React.useState("PASSIVE SCANNING...");
-            const [dump, setDump] = React.useState("");
+            const [detectedType, setDetectedType] = React.useState("PASSIVE");
+            const [heap, setHeap] = React.useState("0 MB");
             const [fuzzing, setFuzzing] = React.useState(false);
 
             const addLog = (m) => setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${m}`, ...prev]);
 
-            // ADVANCED CHROMIUM SCANNER
+            // Memory Monitor Logic
+            React.useEffect(() => {
+                const memTicker = setInterval(() => {
+                    if (window.performance && window.performance.memory) {
+                        const used = Math.round(window.performance.memory.usedJSHeapSize / 1048576);
+                        setHeap(used + " MB");
+                    }
+                }, 500);
+                return () => clearInterval(memTicker);
+            }, []);
+
+            // Scanner for Mojo & Privileged Interfaces
             React.useEffect(() => {
                 const scanner = setInterval(() => {
-                    const checks = {
-                        mojo: !!window.Mojo,
-                        chromeSend: !!window.chrome?.send,
-                        electron: !!(window.api || window.electron),
-                        webSql: !!window.openDatabase
-                    };
-
-                    if (checks.mojo && !isVulnerable) {
-                        setDetectedType("MOJO IPC (CRITICAL)");
+                    const hasMojo = !!window.Mojo;
+                    const hasChromeSend = !!window.chrome?.send;
+                    
+                    if (hasMojo && !isVulnerable) {
                         setIsVulnerable(true);
-                        addLog("!!! ALERT: Real Mojo bindings detected. Possible Sandbox Escape !!!");
-                    } else if (checks.chromeSend && !isVulnerable) {
-                        setDetectedType("CHROME.SEND (PRIVILEGED)");
+                        setDetectedType("MOJO_JS");
+                        addLog("!!! CRITICAL: MojoJS Bindings Exposed !!!");
+                    } else if (hasChromeSend && !isVulnerable) {
+                        setDetectedType("CHROME_SEND");
                         setIsVulnerable(true);
-                        addLog("NOTIFICATION: Privileged chrome.send interface accessible.");
-                    } else if (checks.electron && !isVulnerable) {
-                        setDetectedType("ELECTRON BRIDGE");
-                        setIsVulnerable(true);
-                        addLog("FOUND: Electron IPC bridge detected.");
+                        addLog("WARN: Privileged chrome.send detected.");
                     }
                 }, 1000);
                 return () => clearInterval(scanner);
             }, [isVulnerable]);
 
-            // MULTI-STAGE FUZZER
             const runFuzzer = async () => {
                 setFuzzing(true);
-                addLog("STARTING MULTI-STAGE FUZZER...");
-                const payloads = [0, -1, 2147483647, 2147483648, 4294967295, 0xFFFFFFFF, 1073741824];
+                addLog("INITIATING MULTI-STAGE FUZZER...");
+                // Testing 32-bit and 64-bit boundaries
+                const payloads = [0, -1, 2147483647, 2147483648, 4294967295, 0x7FFFFFFF, 0xFFFFFFFF];
                 
                 for (let val of payloads) {
-                    addLog(`TESTING OVERFLOW BOUNDARY: ${val}`);
+                    addLog(`STRESS TEST: boundary_val(${val})`);
                     try {
                         if (window.openDatabase) {
-                            const db = window.openDatabase('fuzz_db_'+val, '1.0', 'fuzz', 1024*1024);
+                            const db = window.openDatabase('fuzz_'+Date.now(), '1.0', 'f', 1e6);
                             db.transaction(tx => {
                                 tx.executeSql(`SELECT zeroblob(${val})`, [], 
-                                (t, r) => addLog(`BYPASS: ${val} accepted without crash.`),
-                                (t, e) => addLog(`CAUGHT: V8 rejected ${val}: ${e.message}`)
+                                    () => addLog(`PASS: ${val} handled safely.`),
+                                    (t, e) => addLog(`REJECTED: ${e.message}`)
                                 );
                             });
                         }
                     } catch (e) {
-                        addLog(`CRASH SIGNAL: Potential hit on ${val}!`);
+                        addLog("CRASH POTENTIAL: Exception on " + val);
                     }
-                    await new Promise(r => setTimeout(r, 400));
+                    await new Promise(r => setTimeout(r, 300));
                 }
                 setFuzzing(false);
                 addLog("FUZZING CYCLE COMPLETE.");
             };
 
-            const runForge = async () => {
-                addLog("Executing Primary Heap Leak Payload...");
-                try {
-                    if (window.openDatabase) {
-                        const db = window.openDatabase('research_db', '1.0', 'research', 5*1024*1024);
-                        db.transaction(tx => {
-                            tx.executeSql('SELECT zeroblob(2147483648) AS leak', [], (t, res) => {
-                                addLog("FORGE SUCCESS: Data exfiltrated.");
-                                setDump(JSON.stringify({timestamp: Date.now(), status: "Exfiltrated", data: "0x" + Math.random().toString(16).slice(2, 15).toUpperCase()}, null, 2));
-                            });
-                        });
-                    }
-                } catch (e) {
-                    addLog("SANDBOX BLOCK: " + e.message);
+            const runForge = () => {
+                addLog("Attempting 2GB Integer Wrap...");
+                if (window.openDatabase) {
+                    const db = window.openDatabase('forge', '1.0', 'f', 1e6);
+                    db.transaction(tx => {
+                        tx.executeSql('SELECT zeroblob(2147483648)', [], () => addLog("ALLOCATION SUCCESS."));
+                    });
                 }
             };
 
             return (
                 <div className="terminal">
                     <div className="header">
-                        <h1>AV-7 CHROMIUM FORGE <span className="blink">_</span></h1>
-                        <small>VRP RESEARCH SUITE // ENGINE: CHROMIUM-V8</small>
+                        <h1>AV-7 CHROMIUM FORGE <span className={fuzzing ? 'critical' : ''}>_</span></h1>
+                        <small>VRP RESEARCH SUITE // macOS TARGETING</small>
                     </div>
 
                     <div className="status-grid">
                         <div className="status-box">
-                            <small>DETECTION STATUS</small>
-                            <div style={{color: isVulnerable ? '#ff4141' : '#00ff41', fontWeight: 'bold'}}>
-                                {isVulnerable ? '● VULNERABLE' : '○ MONITORING'}
-                            </div>
+                            <small>Detection</small>
+                            <div style={{color: isVulnerable ? '#ff4141' : '#00ff41'}}>{isVulnerable ? 'VULN' : 'SECURE'}</div>
                         </div>
                         <div className="status-box">
-                            <small>IPC INTERFACE</small>
+                            <small>Interface</small>
                             <div style={{color: '#fff'}}>{detectedType}</div>
                         </div>
                         <div className="status-box">
-                            <small>MEM_PRESSURE</small>
-                            <div style={{color: '#fff'}}>2.0 GB (INT32)</div>
+                            <small>JS Heap</small>
+                            <div style={{color: '#fff'}}>{heap}</div>
+                        </div>
+                        <div className="status-box">
+                            <small>Pressure</small>
+                            <div style={{color: '#fff'}}>2.0 GB</div>
                         </div>
                     </div>
 
                     <div className="btn-group">
-                        <button onClick={runForge} disabled={!isVulnerable}>
-                            EXECUTE PRIMARY FORGE
-                        </button>
+                        <button onClick={runForge} disabled={!isVulnerable}>EXECUTE FORGE</button>
                         <button className="fuzz-btn" onClick={runFuzzer} disabled={fuzzing}>
-                            {fuzzing ? "FUZZING IN PROGRESS..." : "RUN MULTI-STAGE FUZZER"}
+                            {fuzzing ? "FUZZING..." : "RUN MULTI-STAGE FUZZER"}
                         </button>
                     </div>
 
                     <div className="log-area">
-                        {logs.length === 0 && <div style={{color: '#444'}}>[SYSTEM] Ready. Scanning for Mojo/IPC/WebSQL...</div>}
-                        {logs.map((l, i) => <div key={i} style={{opacity: i === 0 ? 1 : 0.6, marginBottom: '4px'}}>{l}</div>)}
+                        {logs.length === 0 && <div style={{color: '#444'}}>[SYSTEM] Awaiting input. Hard Refresh (Cmd+Opt+R) to reset.</div>}
+                        {logs.map((l, i) => <div key={i} style={{opacity: i === 0 ? 1 : 0.5, marginBottom: '4px'}}>{l}</div>)}
                     </div>
-
-                    {dump && (
-                        <div className="leak-view">
-                            <h3 style={{fontSize: '14px', margin: '0 0 10px 0'}}>LEAKED HEAP FRAGMENT:</h3>
-                            <pre>{dump}</pre>
-                        </div>
-                    )}
                 </div>
             );
         }
